@@ -44,9 +44,11 @@ boundary. Install only code you trust.
    also opens/closes that dialog for `opencode-panel`.
 
 Keep `RECIPE.md` and `preview.png` in the repository, not in Herdr's config home.
-The preview is a real Herdr screenshot with opaque replacements for machine,
-space, session and path text; the surrounding custom layout is illustrative,
-not included in this mod.
+The preview is an anonymized, recomposed Herdr screenshot. Its 1600×1000 (16:10)
+frame matches the gallery's thumbnails, with a narrow terminal and muted sidebar
+to keep the OpenCode panel legible. Machine, space, session and path text are
+replaced with examples. This illustrative framing is not included in the mod
+and does not change your layout.
 
 ## Service and updates
 

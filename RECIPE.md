@@ -37,6 +37,10 @@ New session. It is a reusable mod, not a replacement window layout.
 
 The preview's sidebar and terminal are context from a personal layout, not
 parts to recreate. Its machine/space/session labels and paths are anonymized.
+Use a 1600×1000 (16:10) preview so Herdr's top-left-aligned, cover-fit gallery
+thumbnails do not crop away the panel. In this recomposed screenshot the panel
+occupies just over half the image width; the terminal is narrower and the
+sidebar colors are muted. This is preview framing, not a supplied layout.
 
 ## How it behaves
 
