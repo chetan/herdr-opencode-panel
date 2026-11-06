@@ -1,10 +1,8 @@
 # OpenCode Panel for Herdr
 
-A native Herdr panel for browsing and resuming OpenCode project sessions. It
-connects to the background OpenCode 2.x service, follows the selected terminal's
-directory, and refreshes the affected project's session metadata when sessions
-are created, renamed, moved, or finish running. Open a session in a new tab or
-start a fresh one without leaving Herdr.
+Pick up where you left off in OpenCode without leaving Herdr. Browse your current
+project's sessions, resume one in a new tab, or start fresh. The panel follows you
+between projects and stays up to date with OpenCode's background service.
 
 ![OpenCode Panel](preview.png)
 
