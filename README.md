@@ -8,12 +8,13 @@ between projects and stays up to date with OpenCode's background service.
 
 ## Install
 
-Requires Herdr with the mod APIs described in its generated `AGENTS.md`, Bun,
-and a running OpenCode 2.x background service. The client is pinned to 2.2.3;
+Requires Herdr with the mod APIs described in its generated `AGENTS.md`, either
+Bun or Node.js 22+, and a running OpenCode 2.x background service.
+The client is pinned to 2.2.3;
 the original installation was tested against service 2.2.5. Local filesystem
 handling and the remote fallback currently assume macOS/Linux paths.
 
-**Access disclosure:** this is trusted code. It runs Bun to start a local
+**Access disclosure:** this is trusted code. It runs Bun or Node.js to start a local
 adapter, makes authenticated HTTP requests to loopback and the discovered
 OpenCode service, and reads OpenCode's service registration and local `.git`
 metadata outside its folder. It writes private bridge registration beneath
@@ -32,6 +33,8 @@ boundary. Install only code you trust.
    ```sh
    cd ~/.config/herdr-app/mods/opencode-panel/adapter
    bun install --frozen-lockfile
+   # Or, with Node.js and npm:
+   # npm ci
    ```
 
 4. Run `herdr-app check ~/.config/herdr-app/mods/opencode-panel`.
@@ -50,7 +53,19 @@ not included in this mod.
 
 ## Service and updates
 
-The panel lazily launches one persistent, authenticated loopback Bun bridge.
+The panel lazily launches one persistent, authenticated loopback bridge.
+When it needs to launch the adapter, it probes runtimes in this order:
+
+1. `bun` on `PATH`
+2. `~/.bun/bin/bun`
+3. `node` on `PATH` (version 22 or newer)
+
+Fallback happens only when an executable cannot start. A failed version check,
+unsupported Node version, or adapter/dependency error stops with an actionable
+message instead of trying another runtime. An already-healthy bridge is reused,
+regardless of which supported runtime started it. The detached server uses the
+same runtime executable as its launcher.
+
 The official `@opencode/client/service` API discovers an existing compatible
 service and supplies authentication; the bridge never starts, stops or upgrades
 OpenCode itself. Start OpenCode normally if its service is not running. No token
@@ -84,11 +99,24 @@ registration file. These are local runtime settings, not public config files.
 
 ```sh
 herdr-app check mods/opencode-panel
-node --test mods/opencode-panel/model.test.mjs mods/opencode-panel/panel.test.mjs
-cd mods/opencode-panel/adapter
-bun install --frozen-lockfile
-bun test
+bun install --cwd mods/opencode-panel/adapter --frozen-lockfile
+bun test mods/opencode-panel
 ```
+
+Or use Node.js and npm, without installing Bun:
+
+```sh
+herdr-app check mods/opencode-panel
+npm ci --prefix mods/opencode-panel/adapter
+node --test mods/opencode-panel/*.test.mjs mods/opencode-panel/adapter/*.test.mjs
+```
+
+The same tests cover runtime preference/fallback, session caches, SDK
+authentication, HTTP access controls, body limits, and detached startup/reuse.
+Both `bun.lock` and `package-lock.json` are committed; keep their dependency
+versions synchronized. The suite is tested with Bun 1.4.4 and Node.js 22, 24 and 26.
+Integration tests use disposable registrations and an absent upstream service
+file; they never replace the installed bridge or change the OpenCode service.
 
 Then try the mod in Herdr: the static check does not exercise later async states
 or native layout. See [RECIPE.md](RECIPE.md) for visual and behavioral acceptance

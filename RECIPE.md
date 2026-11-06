@@ -111,9 +111,12 @@ or generated Herdr declaration/config files.
   Bound entries to 32 projects and hint maps to 512. Confirm unseen directories
   with the adapter so nested repositories do not permanently inherit a parent's
   cached list.
-- `bridge.js`: use Herdr `exec` to run `bun` with
-  `appHome()+"/mods/opencode-panel/adapter/launch.mjs"`, falling back to
-  `home()+"/.bun/bin/bun"` if Bun cannot start. Read and validate the private
+- `bridge.js`: use Herdr `exec` with `--version` to probe `bun` on PATH, then
+  `home()+"/.bun/bin/bun"`, then `node` on PATH. Skip only executables that cannot
+  start; a nonzero version check fails, and Node must report version 22 or newer.
+  Run `appHome()+"/mods/opencode-panel/adapter/launch.mjs"` with the first available
+  supported runtime. Once selected, a failed adapter launch must not fall back
+  to another runtime and hide a dependency/startup error. Read and validate the private
   registration at `appHome()+"/data/opencode-panel/bridge.json"` using
   `readTextFile`; require version 1, a valid port and a 64-hex-character token.
   Cache the endpoint; authenticated `fetch` calls use `/snapshot` and `/revision`.
@@ -126,9 +129,15 @@ or generated Herdr declaration/config files.
 
 ### Background adapter
 
-Use Bun and pinned `@opencode/client` 2.2.3, committed `package.json` and
-`bun.lock`. It is separate from Herdr's JavaScript runtime, so Node filesystem,
-process, timers and crypto APIs belong here, never in native UI code.
+Support Bun and Node.js 22+ using pinned `@opencode/client` 2.2.3 and committed
+`package.json`, `bun.lock` and `package-lock.json`. Install with either
+`bun install --frozen-lockfile` or `npm ci`. Keep both lockfiles' dependency
+versions synchronized. The adapter is separate from Herdr's JavaScript runtime,
+so Node filesystem, HTTP, process, timer and crypto APIs belong here, never in
+native UI code. Use `node:http`'s `createServer`, `node:timers/promises` for sleep,
+`node:child_process` for spawning, and `fileURLToPath`/`import.meta.url` for module
+paths. Do not use `Bun.serve`, `Bun.sleep`, `Bun.spawn` or `import.meta.dir`.
+Tests use `node:test` and `node:assert/strict` and run under both runtimes.
 
 - `upstream.mjs`: import `OpenCode` from `@opencode/client` and `Service` from
   `@opencode/client/service`. `Service.discover({version: v => v.startsWith("2.")})`
@@ -154,13 +163,19 @@ process, timers and crypto APIs belong here, never in native UI code.
 - `runtime.mjs`, `launch.mjs`, `server.mjs`: hash adapter sources to identify
   builds. Reuse a healthy matching bridge; serialize startup with a directory
   lock, recover locks older than 30 seconds, replace only an older bridge,
-  and wait up to ten seconds for readiness. Detach one Bun server. Default state
+  and wait up to ten seconds for readiness. Detach one server with
+  `process.execPath`, preserving the launcher's runtime; convert the module URL
+  with `fileURLToPath` so paths with spaces/special characters work. Surface
+  child-spawn errors. Reuse a healthy build even if a different supported runtime
+  launched it. Default state
   is the Herdr `data/opencode-panel/` sibling of `mods/`, overridable with
   `HERDR_OPENCODE_ADAPTER_STATE`. Atomic registration contains version, build,
   PID, port and a random 32-byte hex bridge-only token, file 0600/directory 0700.
   Bind only `127.0.0.1:0`, reject Origin headers/non-loopback hosts, compare
   Bearer authorization in constant time, mark replies `no-store`, limit bodies
-  to 4KiB. Authenticated routes: GET `/health`, `/revision`, `/metrics`; POST
+  to 4KiB, including chunked request bodies; return 413 for oversized bodies.
+  Malformed JSON returns 400. Client disconnects must not terminate the bridge.
+  Authenticated routes: GET `/health`, `/revision`, `/metrics`; POST
   `/snapshot` with absolute directory, integer limit 1–1000 and boolean force;
   POST `/shutdown`. Never expose upstream credentials. Shut down after five
   minutes without requests; never shut down OpenCode. Metrics contain counters
@@ -184,11 +199,11 @@ local API. This is a CLI fallback, not a deployed remote bridge.
 - Give the optional dialog explicit overlay width/height: an unconstrained
   dialog collapses the flex-based session list to zero height despite loading
   its data correctly. Open mod opens a dialog, not a dock toggle.
-- Requires Bun and an already-running compatible OpenCode 2.x service. Do not
+- Requires Bun or Node.js 22+ and an already-running compatible OpenCode 2.x service. Do not
   replace discovery with a hardcoded port or publish service auth. The bridge's
   metadata-only surface is not an upstream authorization sandbox.
 - With alternate `HERDR_APP_HOME`, set `HERDR_OPENCODE_ADAPTER_STATE` to its
-  `data/opencode-panel` too; the native reader and Bun writer must agree.
+  `data/opencode-panel` too; the native reader and adapter writer must agree.
   Installing via a symlink can also affect relative state paths; configure the
   explicit state directory if using a source-controlled symlink later.
 - Unix absolute paths only; Windows/remote bridge deployment are not supported.
@@ -204,8 +219,15 @@ local API. This is a CLI fallback, not a deployed remote bridge.
 
 ## Done when
 
-1. `herdr-app check mods/opencode-panel` passes. Node's model/panel tests and
-   `bun test` in `adapter/` pass after `bun install --frozen-lockfile`.
+1. `herdr-app check mods/opencode-panel` passes. After installing dependencies,
+   all `*.test.mjs` files in the mod and adapter pass under both
+   `bun test mods/opencode-panel` and
+   `node --test mods/opencode-panel/*.test.mjs mods/opencode-panel/adapter/*.test.mjs`.
+   Clean `npm ci` and `bun install --frozen-lockfile` installations both work.
+   Test Node.js 22, 24 and 26 plus Bun 1.4.4. Prove Bun preference, home-Bun
+   fallback, Node-only startup, unsupported/missing runtime errors and no fallback
+   after adapter failure. Detached startup/reuse tests use isolated state and an
+   absent upstream service file, never the owner's live bridge.
 2. In Herdr it docks at the right without a supplied layout. The optional merged
    shortcut toggles a correctly sized dialog copy; directional pane navigation
    can focus native controls in the dock.
