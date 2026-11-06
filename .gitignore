@@ -3,3 +3,6 @@ node_modules/
 *.error
 data/
 .private/
+mods/**/gpui-kit.d.ts
+mods/**/herdr.d.ts
+mods/**/jsconfig.json

@@ -1,0 +1,7 @@
+{
+  "name": "herdr-opencode-adapter",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "bun test" },
+  "dependencies": { "@opencode/client": "2.2.3" }
+}
