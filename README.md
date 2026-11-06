@@ -66,6 +66,11 @@ message instead of trying another runtime. An already-healthy bridge is reused,
 regardless of which supported runtime started it. The detached server uses the
 same runtime executable as its launcher.
 
+The HTTP transports are separate: Bun uses the small native `Bun.serve` adapter
+in `http-bun.mjs`; Node alone loads the stream-handling fallback in `http-node.mjs`.
+Both call the same request handler for authentication, routing and validation.
+OpenCode discovery, session caches and event handling are shared as well.
+
 The official `@opencode/client/service` API discovers an existing compatible
 service and supplies authentication; the bridge never starts, stops or upgrades
 OpenCode itself. Start OpenCode normally if its service is not running. No token

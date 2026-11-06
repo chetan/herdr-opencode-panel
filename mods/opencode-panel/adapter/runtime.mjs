@@ -9,7 +9,7 @@ export const registration = path.join(stateDirectory, "bridge.json");
 export const lock = path.join(stateDirectory, "start.lock");
 export async function buildID() {
   const hash = createHash("sha256");
-  for (const name of ["server.mjs", "cache.mjs", "roots.mjs", "upstream.mjs", "runtime.mjs", "package.json"]) {
+  for (const name of ["server.mjs", "http-handler.mjs", "http-bun.mjs", "http-node.mjs", "cache.mjs", "roots.mjs", "upstream.mjs", "runtime.mjs", "package.json"]) {
     hash.update(await readFile(path.join(directory, name)));
   }
   return hash.digest("hex").slice(0, 16);

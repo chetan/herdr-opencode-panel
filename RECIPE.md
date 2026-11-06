@@ -134,11 +134,27 @@ Support Bun and Node.js 22+ using pinned `@opencode/client` 2.2.3 and committed
 `bun install --frozen-lockfile` or `npm ci`. Keep both lockfiles' dependency
 versions synchronized. The adapter is separate from Herdr's JavaScript runtime,
 so Node filesystem, HTTP, process, timer and crypto APIs belong here, never in
-native UI code. Use `node:http`'s `createServer`, `node:timers/promises` for sleep,
-`node:child_process` for spawning, and `fileURLToPath`/`import.meta.url` for module
-paths. Do not use `Bun.serve`, `Bun.sleep`, `Bun.spawn` or `import.meta.dir`.
+native UI code. Keep the common discovery/cache/lifecycle code portable, using
+`node:timers/promises` for sleep, `node:child_process` for spawning, and
+`fileURLToPath`/`import.meta.url` for module paths. Use Bun's native HTTP server
+when running under Bun; do not route it through Node's compatibility server.
 Tests use `node:test` and `node:assert/strict` and run under both runtimes.
 
+- `http-handler.mjs`: one shared request handler owns constant-time bearer auth,
+  Origin/loopback-host checks, routing, input validation and sanitized replies.
+  It accepts a native Request or an object with `url`, `method`, `Headers` and
+  a bounded `json()` reader, plus the listening port. Return standard Responses.
+- `http-bun.mjs`: a small `Bun.serve` adapter with loopback binding, ephemeral
+  port and native `maxRequestBodySize: 4096`. Pass native Requests straight to
+  the shared handler. Set `development: false` and a sanitized error callback
+  so an exception cannot expose Bun's debug page. Use `server.stop(true)`.
+- `http-node.mjs`: only the Node fallback imports `node:http`. Bound incoming
+  request streams to 4KiB, including chunked bodies; translate the minimal
+  request interface and shared Responses to Node's HTTP objects. Handle client
+  disconnects without crashing. Expose the same `{port, stop}` interface.
+- `server.mjs` dynamically imports only the active runtime's HTTP adapter;
+  a Bun transport failure must not silently load the Node transport. Hash both
+  adapters and the shared handler as part of the bridge build ID.
 - `upstream.mjs`: import `OpenCode` from `@opencode/client` and `Service` from
   `@opencode/client/service`. `Service.discover({version: v => v.startsWith("2.")})`
   locates an existing service; `Service.headers(endpoint)` provides auth to
