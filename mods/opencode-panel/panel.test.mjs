@@ -52,6 +52,13 @@ function harness(responder = directory => snapshot(directory)) {
 }
 const renderOnly = { spawn() { throw new Error("render must not spawn"); }, notify() { throw new Error("render must not notify"); } };
 
+test("standalone placement and dialog dimensions do not depend on a supplied layout", () => {
+  const config = JSON.parse(readFileSync(new URL("./mod.json", import.meta.url), "utf8"));
+  assert.equal(config.place, "right");
+  assert.equal(config.size, 360);
+  assert.deepEqual(config.overlay, { width: 360, height: 640 });
+});
+
 test("renders ten sessions and launches a selected session in the current space", async () => {
   const h = harness(); h.panel.refresh(h.cx); await h.settle(); h.panel.render(renderOnly);
   assert.equal([...h.buttons.keys()].filter(id => /^session-ses_/.test(id)).length, 10);

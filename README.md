@@ -40,9 +40,10 @@ boundary. Install only code you trust.
    Herdr docks the newly discovered mod on the right at 360 logical pixels.
    No custom layout or toolbar mod is required.
 5. Optionally merge the supplied `keys.json` binding into your existing file:
-   **Ctrl-Shift-F12** toggles the panel. Ask before replacing an existing binding;
+   **Ctrl-Shift-F12** toggles a 360×640 floating dialog copy. It does not toggle
+   an already-docked block. Ask before replacing an existing binding;
    never replace your whole keys file. The command palette's Open mod action
-   also opens/closes `opencode-panel`.
+   also opens/closes that dialog for `opencode-panel`.
 
 Keep `RECIPE.md` and `preview.png` in the repository, not in Herdr's config home.
 The preview is a real Herdr screenshot with opaque replacements for machine,

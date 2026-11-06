@@ -70,7 +70,7 @@ parts to recreate. Its machine/space/session labels and paths are anonymized.
   session as seen. It shows titles and update ages only.
 - Buttons have native hover, keyboard-focus and pressed backgrounds, accessible
   labels and tooltips. Directional pane navigation can focus the panel. Optional
-  Ctrl-Shift-F12 toggles it; there are no panel-specific keyboard commands beyond
+  Ctrl-Shift-F12 toggles a 360×640px dialog copy (not a docked block); there are no panel-specific keyboard commands beyond
   receiving focus. No dragging, animation or periodic spinner redraws.
 
 ## Built from
@@ -82,7 +82,7 @@ or generated Herdr declaration/config files.
 
 ### Native mod
 
-- `mod.json`: `{"place":"right","size":360,"title":"OpenCode sessions","focusable":true}`.
+- `mod.json`: `{"place":"right","size":360,"title":"OpenCode sessions","focusable":true,"overlay":{"width":360,"height":640}}`.
   Herdr docks it when first discovered. No custom block IDs, toolbar mod,
   shipped mod imports, or layout-node tree are required. It accepts no custom
   props; its context comes from live Herdr data.
@@ -181,6 +181,9 @@ local API. This is a CLI fallback, not a deployed remote bridge.
   while hidden; revision polling continues, so the bridge stays alive while
   the instance still requests data. Multiple copies have independent view caches
   but share the local bridge.
+- Give the optional dialog explicit overlay width/height: an unconstrained
+  dialog collapses the flex-based session list to zero height despite loading
+  its data correctly. Open mod opens a dialog, not a dock toggle.
 - Requires Bun and an already-running compatible OpenCode 2.x service. Do not
   replace discovery with a hardcoded port or publish service auth. The bridge's
   metadata-only surface is not an upstream authorization sandbox.
@@ -204,7 +207,8 @@ local API. This is a CLI fallback, not a deployed remote bridge.
 1. `herdr-app check mods/opencode-panel` passes. Node's model/panel tests and
    `bun test` in `adapter/` pass after `bun install --frozen-lockfile`.
 2. In Herdr it docks at the right without a supplied layout. The optional merged
-   shortcut toggles it; directional pane navigation can focus native controls.
+   shortcut toggles a correctly sized dialog copy; directional pane navigation
+   can focus native controls in the dock.
 3. An uncached project shows skeletons, then up to ten ordered sessions (even if
    all are old). Empty/no-terminal/error states are legible in light/dark themes.
 4. Split focus and changing directories follow the right project. Package
