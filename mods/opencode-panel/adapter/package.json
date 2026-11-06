@@ -2,6 +2,7 @@
   "name": "herdr-opencode-adapter",
   "private": true,
   "type": "module",
-  "scripts": { "test": "bun test" },
+  "scripts": { "test": "node --test *.test.mjs", "test:bun": "bun test" },
+  "engines": { "node": ">=22" },
   "dependencies": { "@opencode/client": "2.2.3" }
 }

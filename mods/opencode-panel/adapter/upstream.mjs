@@ -1,5 +1,6 @@
 import { OpenCode } from "@opencode/client";
 import { Service } from "@opencode/client/service";
+import { setTimeout as sleep } from "node:timers/promises";
 
 export const EVENT_TYPES = ["session.created", "session.renamed", "session.moved", "session.deleted",
   "session.archived", "session.unarchived", "session.forked", "session.execution.started",
@@ -44,7 +45,7 @@ export class Upstream {
         }
       } catch { /* server restarts rediscover endpoint + credentials; never log them */ }
       this.client = null;
-      if (!this.stopped) await Bun.sleep(1000);
+      if (!this.stopped) await sleep(1000);
     }
   }
 

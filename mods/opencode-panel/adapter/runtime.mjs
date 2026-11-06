@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const stateDirectory = process.env.HERDR_OPENCODE_ADAPTER_STATE || path.resolve(import.meta.dir, "../../../data/opencode-panel");
+const directory = path.dirname(fileURLToPath(import.meta.url));
+export const stateDirectory = process.env.HERDR_OPENCODE_ADAPTER_STATE || path.resolve(directory, "../../../data/opencode-panel");
 export const registration = path.join(stateDirectory, "bridge.json");
 export const lock = path.join(stateDirectory, "start.lock");
 export async function buildID() {
   const hash = createHash("sha256");
   for (const name of ["server.mjs", "cache.mjs", "roots.mjs", "upstream.mjs", "runtime.mjs", "package.json"]) {
-    hash.update(await readFile(path.join(import.meta.dir, name)));
+    hash.update(await readFile(path.join(directory, name)));
   }
   return hash.digest("hex").slice(0, 16);
 }
