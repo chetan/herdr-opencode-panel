@@ -1,4 +1,4 @@
-import { View, div, svg, image } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { Button, h_flex, v_flex } from "gpui-base";
 import { spaces, panes, focused, exec, run, theme, nextCommand, notify } from "herdr";
 import { DEFAULT_COUNT, directoryKey, projectSessions, initialCount, age, sessionTab } from "./model.js";
@@ -148,7 +148,7 @@ export default class OpenCodeSessions extends View {
     return v_flex().id("opencode-sessions").size_full().min_h(0).rounded(10).overflow_hidden()
       .bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .child(h_flex().h(42).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(image("mods/opencode-panel/opencode.png").size(16))
+        .child(svg("icons/opencode.svg").size(16))
         .child(div().font_semibold().child("OpenCode"))
         .child(div().flex_1())
         .child(control("sessions-refresh", pending ? "Loading sessions…" : "Refresh sessions", (_e, cx) => this.refresh(cx), pending || !context.cwd, "refresh", true))
