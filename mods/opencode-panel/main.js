@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { Button, h_flex, v_flex } from "gpui-base";
-import { spaces, panes, focused, exec, run, theme, nextCommand, notify } from "herdr";
+import { spaces, panes, focused, exec, run, theme, nextCommand, notify, shared, setShared } from "herdr";
 import { DEFAULT_COUNT, directoryKey, projectSessions, initialCount, age, sessionTab } from "./model.js";
 import { LocalAdapter } from "./bridge.js";
 import { ProjectViews } from "./projects.js";
@@ -16,7 +16,7 @@ function location() {
 
 export default class OpenCodeSessions extends View {
   init(_props, cx) {
-    this.views = new ProjectViews(); this.adapter = new LocalAdapter(); this.allProjects = false;
+    this.views = new ProjectViews(); this.adapter = new LocalAdapter();
     this.context = null; this.inflight = new Map(); this.failures = new Map();
     this.revision = 0; this.lastRevisionCheck = 0; this.checkingRevision = false;
     this.handle = cx.focus_handle();
@@ -30,13 +30,16 @@ export default class OpenCodeSessions extends View {
     });
   }
 
+  get allProjects() { return shared("opencode-panel.allProjects") === true; }
+
   location() {
     const context = location();
-    return { ...context, allProjects: this.allProjects, key: JSON.stringify([context.key, this.allProjects]) };
+    return { ...context, allProjects: this.allProjects,
+      key: JSON.stringify(this.allProjects ? [context.on, true] : [context.key, false]) };
   }
 
   toggleProjects(cx) {
-    this.allProjects = !this.allProjects;
+    setShared("opencode-panel.allProjects", !this.allProjects);
     this.refresh(cx, false, false);
     cx.notify();
   }
@@ -69,7 +72,7 @@ export default class OpenCodeSessions extends View {
     if (!context.cwd) return;
     this.context = context;
     const view = this.views.get(context), wanted = Math.min(1000, DEFAULT_COUNT + (view?.extra ?? 0));
-    const requestKey = JSON.stringify([context.on, context.cwd, wanted, context.allProjects]);
+    const requestKey = JSON.stringify([context.on, context.allProjects ? null : context.cwd, wanted, context.allProjects]);
     if (this.inflight.has(requestKey)) return;
     this.inflight.set(requestKey, { context: context.key, force });
     this.failures.delete(context.key);
@@ -166,6 +169,7 @@ export default class OpenCodeSessions extends View {
     const shown = sessions.slice(0, count), canMore = view && (count < sessions.length || view.hasMore) && count < 1000;
     const placeholder = pending && !view;
     const error = this.failures.get(context.key)?.error ?? view?.error;
+    const scopeLabel = this.allProjects ? "Showing all projects" : context.cwd ?? "No terminal directory";
     const control = (id, label, action, disabled = false, icon = null, iconOnly = false) => Button.new(id).h(32).px(8).rounded(6)
       .flex().items_center().gap(4).flex_none().when(iconOnly, el => el.w(32).justify_center())
       .text_size(12).text_color(disabled ? t.dim : t.muted).disabled(disabled).accessibility_label(label).tooltip(label)
@@ -181,10 +185,10 @@ export default class OpenCodeSessions extends View {
         .child(control("sessions-refresh", pending ? "Loading sessions…" : "Refresh sessions", (_e, cx) => this.refresh(cx), pending || !context.cwd, "refresh", true))
         .child(control("sessions-new", "New session", () => this.newSession(), !context.cwd, "plus")))
       .child(v_flex().flex_none().px(12).py(8).gap(4).border_b(1).border_color(t.border)
-        .child(div().truncate().text_size(12).text_color(t.muted).tooltip(context.cwd ?? "No terminal directory").child(context.cwd ?? "No terminal directory"))
+        .child(div().id("sessions-scope").truncate().text_size(12).text_color(t.muted).tooltip(scopeLabel).child(scopeLabel))
         .child(h_flex().items_center().justify_between().gap(8)
           .child(div().text_size(11).text_color(t.dim).child(this.allProjects ? "All sessions · newest 10" : "Project sessions · newest 10"))
-          .child(control("sessions-all-projects", this.allProjects ? "All projects: on" : "All projects: off", (_e, cx) => this.toggleProjects(cx))
+           .child(control("sessions-all-projects", this.allProjects ? "Show current project" : "Show all projects", (_e, cx) => this.toggleProjects(cx))
             .selected(this.allProjects).when(this.allProjects, el => el.bg(t.selected).text_color(t.foreground)))))
       .child(v_flex().id(`opencode-session-list-${view?.key ?? "loading"}`).flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(4)
         .when(Boolean(error), el => el.child(div().p(8).text_size(12).text_color(t.ansi1).child(error)))

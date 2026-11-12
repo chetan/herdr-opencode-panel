@@ -9,9 +9,9 @@ const rows = Array.from({ length: 40 }, (_, i) => ({ id: `ses_${i}`, title: `Ses
 const snapshot = (directory, projectID = "project-1") => ({ directory, root: directory.startsWith("/different") ? "/different" : "/repo", projectID,
   sessions: rows, hasMore: true, loading: false, error: null, revision: 1 });
 
-function harness(responder = directory => snapshot(directory)) {
+function harness(responder = directory => snapshot(directory), sharedState = new Map()) {
   const actions = [], calls = [], jobs = [], buttons = new Map();
-  const state = { cwd: "/repo", space: "space-1", on: null, revision: 1 };
+  const state = { cwd: "/repo", space: "space-1", tab: "tab-1", on: null, revision: 1 };
   function element(id) {
     const target = { _id: id, _children: [], click: null };
     let proxy;
@@ -36,9 +36,10 @@ function harness(responder = directory => snapshot(directory)) {
       snapshot(directory, limit, force, allProjects) { calls.push({ directory, limit, force, allProjects }); return Promise.resolve(responder(directory, limit, force, allProjects)); }
       revision() { return Promise.resolve({ revision: state.revision }); }
     },
-    spaces: () => [{ id: state.space, active: true, machine: state.on, tabs: [{ id: "tab-1", active: true }] }],
-    panes: () => [{ tab: "tab-1", focused: true, cwd: state.cwd }],
-    focused: () => ({ tab: "tab-1", cwd: state.cwd, terminal: "t1" }),
+    spaces: () => [{ id: state.space, active: true, machine: state.on, tabs: [{ id: state.tab, active: true }] }],
+    panes: () => [{ tab: state.tab, focused: true, cwd: state.cwd }],
+    focused: () => ({ tab: state.tab, cwd: state.cwd, terminal: "t1" }),
+    shared: key => sharedState.get(key), setShared: (key, value) => sharedState.set(key, value),
     theme: () => ({}),
     nextCommand: () => new Promise(() => {}), notify() {}, exec: () => { throw new Error("Local queries must not shell out"); },
     run: (command, args) => actions.push({ command, args }),
@@ -169,4 +170,48 @@ test("late project responses cannot replace the all-projects view", async () => 
   h.panel.toggleProjects(h.cx); await new Promise(resolve => setImmediate(resolve));
   finish(snapshot("/repo")); await h.settle();
   assert.equal(h.view().projectID, null);
+});
+
+test("scope label and button describe the current view and next action", async () => {
+  const h = harness();
+  h.panel.render(renderOnly);
+  assert.deepEqual(h.buttons.get("sessions-scope")._children, ["/repo"]);
+  assert.equal(h.buttons.get("sessions-all-projects")._children.includes("Show all projects"), true);
+  h.panel.toggleProjects(h.cx); await h.settle(); h.panel.render(renderOnly);
+  assert.deepEqual(h.buttons.get("sessions-scope")._children, ["Showing all projects"]);
+  assert.equal(h.buttons.get("sessions-all-projects")._children.includes("Show current project"), true);
+});
+
+test("all-projects mode follows tabs and spaces without losing cached expansion", async () => {
+  const h = harness();
+  h.panel.toggleProjects(h.cx); await h.settle(); h.panel.more(h.cx);
+  const key = h.panel.location().key;
+  h.state.tab = "tab-2"; h.state.cwd = "/different";
+  h.panel.tick(h.cx); await h.settle();
+  assert.equal(h.panel.location().key, key);
+  assert.equal(h.view().extra, 20);
+  h.state.space = "space-2"; h.state.tab = "tab-3"; h.state.cwd = "/another";
+  h.panel.tick(h.cx); await h.settle(); h.panel.render(renderOnly);
+  assert.equal(h.panel.allProjects, true);
+  assert.equal(h.view().extra, 20);
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.buttons.get("sessions-scope")._children, ["Showing all projects"]);
+  h.panel.toggleProjects(h.cx); await h.settle(); h.panel.render(renderOnly);
+  assert.equal(h.calls.at(-1).directory, "/another");
+  assert.equal(h.calls.at(-1).allProjects, false);
+  assert.deepEqual(h.buttons.get("sessions-scope")._children, ["/another"]);
+});
+
+test("view mode persists across panel copies and reopening, with changes shared both ways", async () => {
+  const state = new Map();
+  const first = harness(undefined, state);
+  first.panel.toggleProjects(first.cx); await first.settle();
+  const reopened = harness(undefined, state);
+  reopened.state.space = "space-2"; reopened.state.cwd = "/different";
+  reopened.panel.tick(reopened.cx); await reopened.settle();
+  assert.equal(reopened.calls[0].allProjects, true);
+  reopened.panel.toggleProjects(reopened.cx); await reopened.settle();
+  assert.equal(first.panel.allProjects, false);
+  first.panel.tick(first.cx); await first.settle();
+  assert.equal(first.calls.at(-1).allProjects, false);
 });
