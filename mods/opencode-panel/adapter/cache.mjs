@@ -30,7 +30,7 @@ export class ProjectCache {
 
   invalidate(projectID) {
     for (const entry of this.projects.values()) {
-      if (!projectID || entry.projectID === projectID) { entry.dirty++; }
+      if (!projectID || entry.projectID === null || entry.projectID === projectID) { entry.dirty++; }
     }
     this.bump();
   }
@@ -46,8 +46,8 @@ export class ProjectCache {
     this.invalidate(known);
   }
 
-  async snapshot(directory, wanted = 10, force = false) {
-    const location = await this.locate(directory);
+  async snapshot(directory, wanted = 10, force = false, allProjects = false) {
+    const location = allProjects ? { projectID: null, root: null } : await this.locate(directory);
     let entry = this.projects.get(location.projectID);
     if (!entry) {
       entry = { projectID: location.projectID, sessions: null, wanted: 30, cursor: null, complete: false,
@@ -81,7 +81,7 @@ export class ProjectCache {
       do {
         const page = await this.call(client => {
           this.stats.listRequests++;
-          return client.session.list({ project: entry.projectID, parentID: null, archived: false,
+          return client.session.list({ ...(entry.projectID === null ? {} : { project: entry.projectID }), parentID: null, archived: false,
             order: "desc", limit: Math.min(100, entry.wanted - rows.length), ...(cursor ? { cursor } : {}) });
         });
         rows.push(...page.data.filter(s => !s.parentID && !s.time.archived).map(s => ({

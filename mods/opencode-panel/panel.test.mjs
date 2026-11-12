@@ -33,7 +33,7 @@ function harness(responder = directory => snapshot(directory)) {
     ...model, ProjectViews, View: class {}, div: element, svg: element, image: element, h_flex: element, v_flex: element,
     Button: { new: element }, Date, Set, Map, JSON,
     LocalAdapter: class {
-      snapshot(directory, limit, force) { calls.push({ directory, limit, force }); return Promise.resolve(responder(directory, limit, force)); }
+      snapshot(directory, limit, force, allProjects) { calls.push({ directory, limit, force, allProjects }); return Promise.resolve(responder(directory, limit, force, allProjects)); }
       revision() { return Promise.resolve({ revision: state.revision }); }
     },
     spaces: () => [{ id: state.space, active: true, machine: state.on, tabs: [{ id: "tab-1", active: true }] }],
@@ -47,7 +47,7 @@ function harness(responder = directory => snapshot(directory)) {
     .replace("export default class OpenCodeSessions", "globalThis.Panel = class OpenCodeSessions");
   vm.runInNewContext(source, sandbox);
   const panel = new sandbox.Panel(); panel.init({}, cx);
-  return { panel, cx, state, calls, actions, buttons, view: () => panel.views.get({ cwd: state.cwd, on: state.on }),
+  return { panel, cx, state, calls, actions, buttons, view: () => panel.views.get(panel.location()),
     async settle() { await Promise.all(jobs.slice(1)); await new Promise(resolve => setImmediate(resolve)); await Promise.all(jobs.slice(1)); } };
 }
 const renderOnly = { spawn() { throw new Error("render must not spawn"); }, notify() { throw new Error("render must not notify"); } };
@@ -139,4 +139,34 @@ test("network failure retains already-cached sessions", async () => {
   h.panel.refresh(h.cx); await h.settle(); h.panel.render(renderOnly);
   assert.equal(h.buttons.has("session-ses_0"), true);
   assert.equal(h.buttons.has("sessions-loading"), false);
+});
+
+test("All projects toggle requests unfiltered sessions and preserves separate expansion", async () => {
+  const h = harness((directory, limit, force, allProjects) => allProjects
+    ? { ...snapshot(directory, null), root: null, sessions: rows.map(s => ({ ...s, directory: "/another-project" })) }
+    : snapshot(directory));
+  h.panel.refresh(h.cx); await h.settle(); h.panel.more(h.cx);
+  h.panel.render(renderOnly);
+  h.buttons.get("sessions-all-projects").click(null, h.cx); await h.settle();
+  assert.equal(h.calls.at(-1).allProjects, true);
+  assert.equal(h.view().extra, 0);
+  h.panel.render(renderOnly); h.buttons.get("session-ses_0").click();
+  assert.equal(h.actions[0].args.folder, "/another-project");
+  h.state.cwd = "/different";
+  assert.equal(h.view().sessions[0].directory, "/another-project");
+  h.state.cwd = "/repo";
+  h.buttons.get("sessions-all-projects").click(null, h.cx); await h.settle();
+  assert.equal(h.calls.at(-1).allProjects, false);
+  assert.equal(h.view().extra, 20);
+  assert.equal(h.view().sessions[0].directory, "/repo");
+});
+
+test("late project responses cannot replace the all-projects view", async () => {
+  let finish;
+  const h = harness((directory, limit, force, allProjects) => allProjects ? snapshot(directory, null)
+    : new Promise(resolve => { finish = resolve; }));
+  h.panel.refresh(h.cx); await new Promise(resolve => setImmediate(resolve));
+  h.panel.toggleProjects(h.cx); await new Promise(resolve => setImmediate(resolve));
+  finish(snapshot("/repo")); await h.settle();
+  assert.equal(h.view().projectID, null);
 });

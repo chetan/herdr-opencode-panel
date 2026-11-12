@@ -51,7 +51,9 @@ test("shared handler passes validated snapshot arguments and defaults", async ()
   const f = fixture();
   assert.deepEqual(await (await f.request()).json(), { sessions: [], revision: 7 });
   assert.equal((await f.request({ body: { directory: "/repo/worktree", limit: 30, force: true } })).status, 200);
-  assert.deepEqual(f.state.snapshots, [["/repo", 10, false], ["/repo/worktree", 30, true]]);
+  assert.equal((await f.request({ body: { directory: "/repo", allProjects: true } })).status, 200);
+  assert.deepEqual(f.state.snapshots, [["/repo", 10, false, false], ["/repo/worktree", 30, true, false], ["/repo", 10, false, true]]);
+  assert.equal((await f.request({ body: { directory: "/repo", allProjects: "true" } })).status, 400);
 });
 
 test("shared handler sanitizes JSON reader and upstream errors", async () => {

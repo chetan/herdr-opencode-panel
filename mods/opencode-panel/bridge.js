@@ -58,6 +58,6 @@ export class LocalAdapter {
     return value;
   }
 
-  snapshot(directory, limit = 10, force = false) { return this.request("/snapshot", { directory, limit, force }); }
+  snapshot(directory, limit = 10, force = false, allProjects = false) { return this.request("/snapshot", { directory, limit, force, allProjects }); }
   revision() { return this.request("/revision"); }
 }

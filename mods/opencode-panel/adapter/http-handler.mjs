@@ -28,8 +28,9 @@ export function createHandler({ token, build, cache, onUse, shutdown }) {
       catch (error) { return json({ error: error?.status === 413 ? "Request body too large" : "Invalid JSON" }, error?.status === 413 ? 413 : 400); }
       if (!body || typeof body.directory !== "string" || !body.directory.startsWith("/") || body.directory.length > 4096
         || (body.limit !== undefined && (!Number.isInteger(body.limit) || body.limit < 1 || body.limit > 1000))
-        || (body.force !== undefined && typeof body.force !== "boolean")) return json({ error: "Invalid request" }, 400);
-      try { return json(await cache.snapshot(body.directory, body.limit ?? 10, body.force === true)); }
+        || (body.force !== undefined && typeof body.force !== "boolean")
+        || (body.allProjects !== undefined && typeof body.allProjects !== "boolean")) return json({ error: "Invalid request" }, 400);
+      try { return json(await cache.snapshot(body.directory, body.limit ?? 10, body.force === true, body.allProjects === true)); }
       catch { return json({ error: "OpenCode API unavailable or directory not found. Check the local service and directory, then refresh." }, 503); }
     } catch { return json({ error: "Invalid request" }, 400); }
   };

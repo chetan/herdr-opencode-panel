@@ -16,7 +16,7 @@ function location() {
 
 export default class OpenCodeSessions extends View {
   init(_props, cx) {
-    this.views = new ProjectViews(); this.adapter = new LocalAdapter();
+    this.views = new ProjectViews(); this.adapter = new LocalAdapter(); this.allProjects = false;
     this.context = null; this.inflight = new Map(); this.failures = new Map();
     this.revision = 0; this.lastRevisionCheck = 0; this.checkingRevision = false;
     this.handle = cx.focus_handle();
@@ -30,8 +30,19 @@ export default class OpenCodeSessions extends View {
     });
   }
 
-  tick(cx) {
+  location() {
     const context = location();
+    return { ...context, allProjects: this.allProjects, key: JSON.stringify([context.key, this.allProjects]) };
+  }
+
+  toggleProjects(cx) {
+    this.allProjects = !this.allProjects;
+    this.refresh(cx, false, false);
+    cx.notify();
+  }
+
+  tick(cx) {
+    const context = this.location();
     const changed = context.key !== this.context?.key;
     this.context = context;
     if (!context.cwd) return;
@@ -45,7 +56,7 @@ export default class OpenCodeSessions extends View {
           const result = await this.adapter.revision();
           if (result.revision !== this.revision) {
             this.revision = result.revision;
-            if (location().key === context.key) this.refresh(cx, false, false);
+            if (this.location().key === context.key) this.refresh(cx, false, false);
           }
         } catch { /* snapshots own actionable errors; do not blank a cached list */ }
         finally { this.checkingRevision = false; }
@@ -54,11 +65,11 @@ export default class OpenCodeSessions extends View {
   }
 
   refresh(cx, more = false, force = true) {
-    const context = location();
+    const context = this.location();
     if (!context.cwd) return;
     this.context = context;
     const view = this.views.get(context), wanted = Math.min(1000, DEFAULT_COUNT + (view?.extra ?? 0));
-    const requestKey = JSON.stringify([context.on, context.cwd, wanted]);
+    const requestKey = JSON.stringify([context.on, context.cwd, wanted, context.allProjects]);
     if (this.inflight.has(requestKey)) return;
     this.inflight.set(requestKey, { context: context.key, force });
     this.failures.delete(context.key);
@@ -66,7 +77,7 @@ export default class OpenCodeSessions extends View {
     cx.spawn(async cx => {
       try {
         const snapshot = context.on ? await this.remoteSnapshot(context, wanted, force)
-          : await this.adapter.snapshot(context.cwd, wanted, force);
+          : await this.adapter.snapshot(context.cwd, wanted, force, context.allProjects);
         const update = this.views.update(context, snapshot);
         shouldNotify = shouldNotify || update.changed;
         if (!context.on) this.revision = snapshot.revision;
@@ -77,7 +88,7 @@ export default class OpenCodeSessions extends View {
         this.inflight.delete(requestKey);
         // Cache late responses for later visits, but never bind them to a
         // different currently selected project/space.
-        if (shouldNotify && location().key === context.key) cx.notify();
+        if (shouldNotify && this.location().key === context.key) cx.notify();
       }
     });
     if (force || !view) cx.notify();
@@ -87,6 +98,22 @@ export default class OpenCodeSessions extends View {
     // Preserve the existing remote-space feature until a bridge is installed
     // there. Never send remote filesystem paths to the local API service.
     const options = { cwd: context.cwd, on: context.on };
+    if (context.allProjects) {
+      const rows = []; let cursor = null;
+      do {
+        const query = `parentID=null&archived=false&order=desc&limit=${Math.min(100, wanted - rows.length)}`
+          + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+        const result = await exec("opencode", ["api", "get", `/api/session?${query}`], options);
+        if (result.code !== 0) throw new Error("Remote OpenCode could not list all sessions.");
+        const page = JSON.parse(result.stdout);
+        rows.push(...page.data);
+        if (page.cursor.next && page.cursor.next === cursor) throw new Error("Remote OpenCode repeated a pagination cursor.");
+        cursor = page.cursor.next;
+      } while (cursor && rows.length < wanted);
+      return { projectID: null, root: null, sessions: projectSessions(rows.map(s => ({
+        id: s.id, title: s.title, directory: s.location.directory, updated: s.time.updated, created: s.time.created,
+      }))), hasMore: Boolean(cursor), loading: false, error: null, capped: wanted >= 1000 };
+    }
     const git = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"], options);
     const roots = git.code === 0 ? git.stdout.trim().split("\n") : [context.cwd, context.cwd];
     const cached = this.views.entries.get(this.views.key(context, roots[0]));
@@ -101,7 +128,7 @@ export default class OpenCodeSessions extends View {
   }
 
   open(session) {
-    const context = location(), view = this.views.get(context);
+    const context = this.location(), view = this.views.get(context);
     if (!view?.sessions.some(s => s.id === session.id)) return;
     try { run("tab.new", sessionTab(session, context.space)); }
     catch (error) { notify({ title: "Cannot open session", body: String(error), level: "error" }); }
@@ -115,7 +142,7 @@ export default class OpenCodeSessions extends View {
   }
 
   more(cx) {
-    const view = this.views.get(location());
+    const view = this.views.get(this.location());
     if (!view || view.loading) return;
     view.extra = Math.min(990, view.extra + 20);
     if (DEFAULT_COUNT + view.extra > view.sessions.length && view.hasMore) this.refresh(cx, true, false);
@@ -129,7 +156,7 @@ export default class OpenCodeSessions extends View {
   }
 
   render(cx) {
-    const context = location();
+    const context = this.location();
     const t = theme(), now = Date.now();
     const view = context.cwd ? this.views.get(context) : null;
     const pending = Boolean(context.cwd && ((!view && !this.failures.has(context.key)) || view?.loading
@@ -155,13 +182,16 @@ export default class OpenCodeSessions extends View {
         .child(control("sessions-new", "New session", () => this.newSession(), !context.cwd, "plus")))
       .child(v_flex().flex_none().px(12).py(8).gap(4).border_b(1).border_color(t.border)
         .child(div().truncate().text_size(12).text_color(t.muted).tooltip(context.cwd ?? "No terminal directory").child(context.cwd ?? "No terminal directory"))
-        .child(div().text_size(11).text_color(t.dim).child("Project sessions · newest 10")))
+        .child(h_flex().items_center().justify_between().gap(8)
+          .child(div().text_size(11).text_color(t.dim).child(this.allProjects ? "All sessions · newest 10" : "Project sessions · newest 10"))
+          .child(control("sessions-all-projects", this.allProjects ? "All projects: on" : "All projects: off", (_e, cx) => this.toggleProjects(cx))
+            .selected(this.allProjects).when(this.allProjects, el => el.bg(t.selected).text_color(t.foreground)))))
       .child(v_flex().id(`opencode-session-list-${view?.key ?? "loading"}`).flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(4)
         .when(Boolean(error), el => el.child(div().p(8).text_size(12).text_color(t.ansi1).child(error)))
         .when(placeholder, el => el.child(v_flex().id("sessions-loading").w_full().gap(4).accessibility_label("Loading OpenCode sessions")
           .children(this.placeholderRows(t))))
         .when(!shown.length && !placeholder, el => el.child(div().p(8).text_size(12).text_color(t.dim)
-          .child(!context.cwd ? "Select a terminal to see its sessions." : error ? "Use Refresh to try again." : "No sessions in this project.")))
+           .child(!context.cwd ? "Select a terminal to see its sessions." : error ? "Use Refresh to try again." : this.allProjects ? "No sessions found." : "No sessions in this project.")))
         .children(shown.map(session => Button.new(`session-${session.id}`).w_full().min_h(64).px(8).py(8).rounded(6)
           .text_color(t.foreground).hover(s => s.bg(t.hover)).focus(s => s.bg(t.selected)).active(s => s.bg(t.selected)).accessibility_label(`Resume ${session.title}`)
           .tooltip(`${session.title}\n${session.directory}\n${session.id}\nUpdated ${new Date(session.updated).toLocaleString()}`)

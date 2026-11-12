@@ -79,6 +79,23 @@ test("events invalidate only the relevant cached project when known", async () =
   assert.equal(f.store.projects.get("project-2").dirty, 1);
 });
 
+test("all-projects view omits the project filter and is invalidated by every project", async () => {
+  const f = fixture();
+  await f.store.snapshot("/repo");
+  const all = await f.store.snapshot("/repo", 10, false, true);
+  assert.equal(all.projectID, null);
+  assert.equal(f.store.stats.locationRequests, 1);
+  assert.equal(Object.hasOwn(f.calls.filter(([name]) => name === "list").at(-1)[1], "project"), false);
+  await f.store.snapshot("/other-project", 10, false, true);
+  assert.equal(f.store.stats.listRequests, 2);
+  f.store.event({ type: "session.created", data: { projectID: "unseen-project" } });
+  assert.equal(f.store.projects.get(null).dirty, 2);
+  assert.equal(f.store.projects.get("project-1").dirty, 1);
+  await f.store.snapshot("/repo", 50, false, true);
+  await f.store.projects.get(null).flight;
+  assert.equal(f.store.projects.get(null).sessions.length, 50);
+});
+
 test("service reconnect invalidates caches without discarding their rows", async () => {
   const f = fixture(); await f.store.snapshot("/repo");
   const first = f.store.projects.get("project-1").sessions;

@@ -1,12 +1,13 @@
 // Per-machine project views survive space/tab/cwd navigation for this mod copy.
 export class ProjectViews {
   constructor() { this.entries = new Map(); this.directories = new Map(); this.roots = new Map(); }
-  directoryKey(context) { return JSON.stringify([context.on ?? null, context.cwd]); }
-  key(context, projectID) { return JSON.stringify([context.on ?? null, projectID]); }
+  directoryKey(context) { return JSON.stringify([context.on ?? null, context.allProjects ? null : context.cwd, Boolean(context.allProjects)]); }
+  key(context, projectID) { return JSON.stringify([context.on ?? null, context.allProjects ? null : projectID, Boolean(context.allProjects)]); }
   exact(context) { return this.entries.get(this.directories.get(this.directoryKey(context))); }
   get(context) {
     const exact = this.exact(context);
     if (exact) return exact;
+    if (context.allProjects) return;
     // Optimistic display only; the adapter still checks .git boundaries before
     // confirming an unseen directory (including nested repos and worktrees).
     const roots = [...this.roots.values()].filter(root => root.on === (context.on ?? null)
@@ -24,7 +25,7 @@ export class ProjectViews {
       loading: snapshot.loading, error: snapshot.error, capped: snapshot.capped, fingerprint });
     entry.checked = Date.now();
     this.directories.set(this.directoryKey(context), key);
-    this.roots.set(JSON.stringify([context.on ?? null, snapshot.root]), { on: context.on ?? null, root: snapshot.root, key });
+    if (!context.allProjects) this.roots.set(JSON.stringify([context.on ?? null, snapshot.root]), { on: context.on ?? null, root: snapshot.root, key });
     // Bound session metadata and location hints during a long-lived app session.
     if (this.entries.size > 32) {
       const oldest = [...this.entries.values()].filter(e => e.key !== key).sort((a, b) => a.checked - b.checked)[0];
