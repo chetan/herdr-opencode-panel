@@ -5,6 +5,7 @@ import { createHandler, MAX_BODY } from "./http-handler.mjs";
 function fixture() {
   const state = { reads: 0, uses: 0, snapshots: [], fail: false };
   const cache = { revision: 7, stats: { listRequests: 2 }, projects: new Map([["project", {}]]),
+    async activity() {},
     async snapshot(...args) {
       state.snapshots.push(args);
       if (state.fail) throw new Error("private fixture upstream details");

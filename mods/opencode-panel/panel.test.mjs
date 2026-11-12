@@ -9,7 +9,7 @@ const rows = Array.from({ length: 40 }, (_, i) => ({ id: `ses_${i}`, title: `Ses
 const snapshot = (directory, projectID = "project-1") => ({ directory, root: directory.startsWith("/different") ? "/different" : "/repo", projectID,
   sessions: rows, hasMore: true, loading: false, error: null, revision: 1 });
 
-function harness(responder = directory => snapshot(directory), sharedState = new Map()) {
+function harness(responder = directory => snapshot(directory), sharedState = new Map(), remoteExec) {
   const actions = [], calls = [], jobs = [], buttons = new Map();
   const state = { cwd: "/repo", space: "space-1", tab: "tab-1", on: null, revision: 1 };
   function element(id) {
@@ -41,7 +41,7 @@ function harness(responder = directory => snapshot(directory), sharedState = new
     focused: () => ({ tab: state.tab, cwd: state.cwd, terminal: "t1" }),
     shared: key => sharedState.get(key), setShared: (key, value) => sharedState.set(key, value),
     theme: () => ({}),
-    nextCommand: () => new Promise(() => {}), notify() {}, exec: () => { throw new Error("Local queries must not shell out"); },
+    nextCommand: () => new Promise(() => {}), notify() {}, exec: remoteExec ?? (() => { throw new Error("Local queries must not shell out"); }),
     run: (command, args) => actions.push({ command, args }),
   };
   const source = readFileSync(new URL("./main.js", import.meta.url), "utf8").replace(/^import .*;\n/gm, "")
@@ -214,4 +214,34 @@ test("view mode persists across panel copies and reopening, with changes shared 
   assert.equal(first.panel.allProjects, false);
   first.panel.tick(first.cx); await first.settle();
   assert.equal(first.calls.at(-1).allProjects, false);
+});
+
+test("only running sessions show a native spinner and Working label, and stop when activity clears", async () => {
+  let active = true;
+  const h = harness(directory => ({ ...snapshot(directory), sessions: rows.map((s, i) => ({ ...s, active: i === 0 && active })) }));
+  h.panel.refresh(h.cx); await h.settle(); h.panel.render(renderOnly);
+  assert.equal(h.buttons.has("session-working-ses_0"), true);
+  assert.equal(h.buttons.has("session-working-ses_1"), false);
+  assert.equal(h.buttons.get("session-working-ses_0")._children.some(child => child?._children?.includes("Working")), true);
+  active = false; h.panel.refresh(h.cx); await h.settle(); h.buttons.clear(); h.panel.render(renderOnly);
+  assert.equal(h.buttons.has("session-working-ses_0"), false);
+});
+
+test("remote activity polls the remote service and clears working state without relisting", async () => {
+  let active = { ses_0: { type: "running" } };
+  const calls = [];
+  const h = harness(undefined, new Map(), async (command, args, options) => {
+    calls.push({ command, args, options });
+    return { code: 0, stdout: JSON.stringify(active) };
+  });
+  h.state.on = "remote";
+  h.panel.views.update(h.panel.location(), snapshot("/repo"));
+  h.panel.tick(h.cx); await h.settle(); h.panel.render(renderOnly);
+  assert.equal(h.buttons.has("session-working-ses_0"), true);
+  assert.equal(calls[0].options.on, "remote");
+  assert.deepEqual(Array.from(calls[0].args), ["api", "get", "/api/session/active"]);
+  active = {}; h.panel.lastRevisionCheck = 0;
+  h.panel.tick(h.cx); await h.settle(); h.buttons.clear(); h.panel.render(renderOnly);
+  assert.equal(h.buttons.has("session-working-ses_0"), false);
+  assert.equal(calls.length, 2);
 });

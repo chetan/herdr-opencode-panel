@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 export const EVENT_TYPES = ["session.created", "session.renamed", "session.moved", "session.deleted",
   "session.archived", "session.unarchived", "session.forked", "session.execution.started",
   "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted",
-  "project.updated", "worktree.updated", "worktree.resolved"];
+  "session.status", "session.idle", "project.updated", "worktree.updated", "worktree.resolved"];
 
 export class Upstream {
   constructor({ discover = Service.discover, headers = Service.headers, make = OpenCode.make } = {}) {

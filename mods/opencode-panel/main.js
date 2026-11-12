@@ -19,6 +19,7 @@ export default class OpenCodeSessions extends View {
     this.views = new ProjectViews(); this.adapter = new LocalAdapter();
     this.context = null; this.inflight = new Map(); this.failures = new Map();
     this.revision = 0; this.lastRevisionCheck = 0; this.checkingRevision = false;
+    this.remoteActive = new Map();
     this.handle = cx.focus_handle();
     // In-memory navigation checks only; no subprocess or network work in render.
     cx.timer.every(150, cx => this.tick(cx));
@@ -52,10 +53,28 @@ export default class OpenCodeSessions extends View {
     const view = this.views.exact(context), failure = this.failures.get(context.key);
     if ((!failure || Date.now() - failure.checked >= 5000)
       && ((!view && changed) || !view || Date.now() - view.checked >= 30000)) this.refresh(cx, false, false);
-    if (!context.on && !this.checkingRevision && Date.now() - this.lastRevisionCheck >= 2000) {
+    if (!this.checkingRevision && Date.now() - this.lastRevisionCheck >= 2000) {
       this.checkingRevision = true; this.lastRevisionCheck = Date.now();
       cx.spawn(async cx => {
         try {
+          if (context.on) {
+            let active = {};
+            try {
+              const result = await exec("opencode", ["api", "get", "/api/session/active"], { on: context.on, cwd: context.cwd });
+              if (result.code === 0) active = JSON.parse(result.stdout);
+            } catch { /* An unavailable status must not leave stale spinners. */ }
+            this.remoteActive.set(context.on, active);
+            let changed = false;
+            for (const entry of this.views.entries.values()) {
+              if (JSON.parse(entry.key)[0] !== context.on) continue;
+              for (const session of entry.sessions) {
+                const working = active[session.id]?.type === "running";
+                if (Boolean(session.active) !== working) { session.active = working; changed = true; }
+              }
+            }
+            if (changed && this.location().on === context.on) cx.notify();
+            return;
+          }
           const result = await this.adapter.revision();
           if (result.revision !== this.revision) {
             this.revision = result.revision;
@@ -81,6 +100,8 @@ export default class OpenCodeSessions extends View {
       try {
         const snapshot = context.on ? await this.remoteSnapshot(context, wanted, force)
           : await this.adapter.snapshot(context.cwd, wanted, force, context.allProjects);
+        if (context.on) snapshot.sessions = snapshot.sessions.map(session => ({ ...session,
+          active: this.remoteActive.get(context.on)?.[session.id]?.type === "running" }));
         const update = this.views.update(context, snapshot);
         shouldNotify = shouldNotify || update.changed;
         if (!context.on) this.revision = snapshot.revision;
@@ -197,12 +218,16 @@ export default class OpenCodeSessions extends View {
         .when(!shown.length && !placeholder, el => el.child(div().p(8).text_size(12).text_color(t.dim)
            .child(!context.cwd ? "Select a terminal to see its sessions." : error ? "Use Refresh to try again." : this.allProjects ? "No sessions found." : "No sessions in this project.")))
         .children(shown.map(session => Button.new(`session-${session.id}`).w_full().min_h(64).px(8).py(8).rounded(6)
-          .text_color(t.foreground).hover(s => s.bg(t.hover)).focus(s => s.bg(t.selected)).active(s => s.bg(t.selected)).accessibility_label(`Resume ${session.title}`)
+          .text_color(t.foreground).hover(s => s.bg(t.hover)).focus(s => s.bg(t.selected)).active(s => s.bg(t.selected)).accessibility_label(`Resume ${session.title}${session.active ? ", agent working" : ""}`)
           .tooltip(`${session.title}\n${session.directory}\n${session.id}\nUpdated ${new Date(session.updated).toLocaleString()}`)
           .on_click(() => this.open(session))
           .child(v_flex().w_full().min_w(0).gap(4)
             .child(div().w_full().truncate().text_size(13).child(session.title))
             .child(h_flex().gap(8).text_size(11).text_color(t.dim)
+              .when(session.active === true, el => el.child(h_flex().id(`session-working-${session.id}`).items_center().gap(4).text_color(t.working)
+                .accessibility_label("Agent working").tooltip("Agent working")
+                .child(svg("mods/opencode-panel/spinner.svg").size(12).spin(900))
+                .child(div().child("Working"))))
               .child(div().child(age(session.updated, now)))
               .child(div().flex_1()).child(div().child("↗")))
             .when(directoryKey(session.directory) !== directoryKey(context.cwd), el => el.child(

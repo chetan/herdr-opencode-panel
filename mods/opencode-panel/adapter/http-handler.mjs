@@ -19,7 +19,7 @@ export function createHandler({ token, build, cache, onUse, shutdown }) {
       if (Number(request.headers.get("content-length")) > MAX_BODY) return json({ error: "Request body too large" }, 413);
       onUse();
       if (request.method === "GET" && url.pathname === "/health") return json({ version: 1, build });
-      if (request.method === "GET" && url.pathname === "/revision") return json({ revision: cache.revision });
+      if (request.method === "GET" && url.pathname === "/revision") { await cache.activity(); return json({ revision: cache.revision }); }
       if (request.method === "GET" && url.pathname === "/metrics") return json({ ...cache.stats, projects: cache.projects.size, revision: cache.revision });
       if (request.method === "POST" && url.pathname === "/shutdown") { setTimeout(shutdown, 50); return json({ stopped: true }); }
       if (request.method !== "POST" || url.pathname !== "/snapshot") return json({ error: "Not found" }, 404);

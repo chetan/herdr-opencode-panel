@@ -5,10 +5,31 @@ export class ProjectCache {
     this.call = call; this.resolve = resolve; this.now = now; this.changed = changed;
     this.roots = new Map(); this.resolving = new Map(); this.projects = new Map();
     this.revision = 1;
+    this.active = new Set(); this.activityChecked = -Infinity; this.activityFlight = null; this.activityVersion = 0;
     this.stats = { locationRequests: 0, listRequests: 0, cacheHits: 0 };
   }
 
   bump() { this.revision++; this.changed(this.revision); }
+
+  setActive(ids) {
+    const next = new Set(ids);
+    if (next.size !== this.active.size || [...next].some(id => !this.active.has(id))) {
+      this.active = next; this.bump();
+    }
+  }
+
+  async activity() {
+    if (this.activityFlight) return this.activityFlight;
+    if (this.now() - this.activityChecked < 1500) return;
+    const version = this.activityVersion;
+    this.activityFlight = this.call(client => client.session.active()).then(active => {
+      if (version === this.activityVersion) this.setActive(Object.keys(active).filter(id => active[id]?.type === "running"));
+    }).catch(() => {
+      // Unknown activity must not leave an old spinner running indefinitely.
+      if (version === this.activityVersion) this.setActive([]);
+    }).finally(() => { this.activityChecked = this.now(); this.activityFlight = null; });
+    return this.activityFlight;
+  }
 
   async locate(directory) {
     const found = await this.resolve(directory), key = found.identity;
@@ -36,6 +57,16 @@ export class ProjectCache {
   }
 
   event(event) {
+    if (event.type === "session.status" || event.type === "session.idle") {
+      const id = event.data?.sessionID;
+      if (!id) return;
+      this.activityVersion++;
+      const active = new Set(this.active);
+      if (["busy", "retry"].includes(event.data?.status?.type)) active.add(id);
+      else active.delete(id);
+      this.setActive(active);
+      return;
+    }
     if (event.type === "server.connected") { this.invalidate(); return; }
     if (event.type === "project.updated" || event.type.startsWith("worktree.")) {
       this.roots.clear(); this.invalidate(); return;
@@ -47,6 +78,7 @@ export class ProjectCache {
   }
 
   async snapshot(directory, wanted = 10, force = false, allProjects = false) {
+    await this.activity();
     const location = allProjects ? { projectID: null, root: null } : await this.locate(directory);
     let entry = this.projects.get(location.projectID);
     if (!entry) {
@@ -67,7 +99,7 @@ export class ProjectCache {
       // their cached rows immediately while one shared refresh runs behind them.
       if (!entry.sessions || force) await request;
     } else this.stats.cacheHits++;
-    return { ...location, sessions: entry.sessions ?? [], hasMore: !entry.complete,
+    return { ...location, sessions: (entry.sessions ?? []).map(session => ({ ...session, active: this.active.has(session.id) })), hasMore: !entry.complete,
       loading: Boolean(entry.flight), error: entry.error, revision: this.revision, capped: entry.wanted >= 1000 };
   }
 

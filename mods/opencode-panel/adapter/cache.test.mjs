@@ -11,12 +11,12 @@ import { Upstream } from "./upstream.mjs";
 const rows = count => Array.from({ length: count }, (_, i) => ({ id: `ses_${i}`, title: `Session ${i}`,
   projectID: "project-1", time: { created: 100, updated: 10000 - i }, location: { directory: "/repo" } }));
 
-function fixture({ count = 80, resolve, listing } = {}) {
+function fixture({ count = 80, resolve, listing, activity = async () => ({}) } = {}) {
   let now = 100000;
   const calls = [];
   const client = {
     location: { get: async input => { calls.push(["location", input]); return { project: { id: input.location.directory.startsWith("/nested") ? "project-2" : "project-1", canonical: "/repo" } }; } },
-    session: { list: async input => {
+    session: { active: activity, list: async input => {
       calls.push(["list", input]);
       if (listing) return listing(input);
       const offset = input.cursor ? Number(input.cursor) : 0;
@@ -102,6 +102,56 @@ test("service reconnect invalidates caches without discarding their rows", async
   f.store.event({ type: "server.connected" });
   assert.equal(f.store.projects.get("project-1").sessions, first);
   assert.equal(f.store.projects.get("project-1").dirty, 2);
+});
+
+test("activity is bootstrapped from running sessions, shared across scopes, and polled without relisting", async () => {
+  let active = { ses_0: { type: "running" } }, requests = 0;
+  const f = fixture({ activity: async () => { requests++; return active; } });
+  const project = await f.store.snapshot("/repo");
+  const all = await f.store.snapshot("/repo", 10, false, true);
+  assert.equal(project.sessions[0].active, true);
+  assert.equal(all.sessions[0].active, true);
+  assert.equal(all.sessions[1].active, false);
+  assert.equal(requests, 1);
+  const revision = f.store.revision, lists = f.store.stats.listRequests;
+  active = {}; f.advance(2000);
+  await Promise.all([f.store.activity(), f.store.activity()]);
+  assert.equal(requests, 2);
+  assert.ok(f.store.revision > revision);
+  assert.equal((await f.store.snapshot("/repo")).sessions[0].active, false);
+  assert.equal(f.store.stats.listRequests, lists);
+});
+
+test("busy and retry status events start activity; idle stops it without invalidating session lists", async () => {
+  const f = fixture(); await f.store.snapshot("/repo");
+  const dirty = f.store.projects.get("project-1").dirty;
+  for (const type of ["busy", "retry", "idle"]) {
+    f.store.event({ type: "session.status", data: { sessionID: "ses_0", status: { type } } });
+    assert.equal((await f.store.snapshot("/repo")).sessions[0].active, type !== "idle");
+    assert.equal(f.store.projects.get("project-1").dirty, dirty);
+  }
+  f.store.event({ type: "session.status", data: { sessionID: "ses_0", status: { type: "busy" } } });
+  f.store.event({ type: "session.idle", data: { sessionID: "ses_0" } });
+  assert.equal(f.store.active.has("ses_0"), false);
+});
+
+test("activity failures clear stale spinners without dropping cached sessions", async () => {
+  let fail = false;
+  const f = fixture({ activity: async () => { if (fail) throw new Error("unavailable"); return { ses_0: { type: "running" } }; } });
+  await f.store.snapshot("/repo");
+  fail = true; f.advance(2000); await f.store.activity();
+  const result = await f.store.snapshot("/repo");
+  assert.equal(result.sessions[0].active, false);
+  assert.equal(result.sessions.length, 30);
+});
+
+test("a late activity poll cannot overwrite a newer status event", async () => {
+  let finish;
+  const f = fixture({ activity: () => new Promise(resolve => { finish = resolve; }) });
+  const pending = f.store.activity();
+  f.store.event({ type: "session.status", data: { sessionID: "ses_0", status: { type: "busy" } } });
+  finish({}); await pending;
+  assert.equal(f.store.active.has("ses_0"), true);
 });
 
 test("filesystem resolution detects nested repos and worktree .git files", async () => {
